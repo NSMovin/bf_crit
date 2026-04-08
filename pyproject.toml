@@ -1,7 +1,7 @@
 [project]
 name = "bf-crit-v1-0"
 version = "0.1.0"
-description = "Add your description here"
+description = "Streamlit demo for detecting mood and generating Boishakh greeting cards"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -10,4 +10,5 @@ dependencies = [
     "opencv-python>=4.13.0.92",
     "pillow>=12.2.0",
     "streamlit>=1.56.0",
+    "tf-keras>=2.21.0",
 ]
