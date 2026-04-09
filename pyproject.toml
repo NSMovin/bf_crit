@@ -5,10 +5,13 @@ description = "Streamlit demo for detecting mood and generating Boishakh greetin
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "arabic-reshaper>=3.0.0",
     "deepface>=0.0.99",
     "numpy>=2.4.4",
     "opencv-python>=4.13.0.92",
     "pillow>=12.2.0",
+    "python-bidi>=0.6.7",
+    "qrcode[pil]>=8.2",
     "streamlit>=1.56.0",
     "tf-keras>=2.21.0",
 ]

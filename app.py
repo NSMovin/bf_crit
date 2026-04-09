@@ -1,17 +1,22 @@
 from __future__ import annotations
 
 import base64
+import csv
 import hashlib
 import io
 import os
 import random
 import tempfile
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
+import qrcode
 import streamlit as st
+import arabic_reshaper
+from bidi.algorithm import get_display
 from PIL import Image, ImageDraw, ImageFont
 
 
@@ -29,9 +34,13 @@ FESTIVAL_MOOD_SCORES = {
     "sad": 0.2,
 }
 FONT_PATHS = [
+    Path("fonts") / "NotoSansBengali_ExtraCondensed-Regular.ttf",
     Path(r"C:\Windows\Fonts\Nirmala.ttc"),
     Path(r"C:\Windows\Fonts\Vrinda.ttf"),
 ]
+OUTPUTS_DIR = Path("outputs")
+CARDS_DIR = OUTPUTS_DIR / "cards"
+LOG_FILE = OUTPUTS_DIR / "logs.csv"
 MESSAGE_MAP = {
     "happy": [
         "শুভ নববর্ষ! আনন্দে ভরে উঠুক তোমার পহেলা বৈশাখ।",
@@ -311,14 +320,23 @@ def detect_emotion(image: np.ndarray, fast_mode: bool = False) -> tuple[str, str
     return normalized, None
 
 
-def get_message(emotion: str, name: str = "") -> str:
+def get_message(emotion: str, name: str = "", user_greeting: str = "") -> str:
     """Return a random Bengali greeting for the detected emotion."""
-    messages = MESSAGE_MAP.get(emotion, MESSAGE_MAP["neutral"])
+    messages = list(MESSAGE_MAP.get(emotion, MESSAGE_MAP["neutral"]))
+    cleaned_user_greeting = user_greeting.strip()
+    if cleaned_user_greeting and cleaned_user_greeting not in messages:
+        messages.append(cleaned_user_greeting)
+
     greeting = random.choice(messages)
     cleaned_name = name.strip()
+    if greeting == cleaned_user_greeting and cleaned_user_greeting:
+        signature = f"-{cleaned_name}" if cleaned_name else "-Guest"
+    else:
+        signature = "-Crit"
+
     if cleaned_name:
-        return f"{cleaned_name}, {greeting}"
-    return greeting
+        return f"{cleaned_name}, {greeting} {signature}"
+    return f"{greeting} {signature}"
 
 
 def load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -331,11 +349,25 @@ def load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     return ImageFont.load_default()
 
 
-def create_card(message: str, emotion: str) -> Image.Image:
+def fix_bengali_text(text: str) -> str:
+    reshaped = arabic_reshaper.reshape(text)
+    return get_display(reshaped)
+
+
+def generate_qr_code(url: str, size: int = 120) -> Image.Image:
+    qr = qrcode.QRCode(version=1, box_size=10, border=2)
+    qr.add_data(url)
+    qr.make(fit=True)
+    qr_image = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+    return qr_image.resize((size, size), Image.Resampling.LANCZOS)
+
+
+def create_card(message: str, emotion: str, user_image: np.ndarray | None = None) -> Image.Image:
     """Create a simple Boishakh-themed greeting card image."""
     width, height = 900, 520
     image = Image.new("RGB", (width, height), "#FFF8F8")
     draw = ImageDraw.Draw(image)
+    photo_layout: dict[str, int] | None = None
 
     draw.rectangle((0, 0, width, 120), fill="#F6C5C5")
     draw.rectangle((0, height - 95, width, height), fill="#F8D9D9")
@@ -354,39 +386,111 @@ def create_card(message: str, emotion: str) -> Image.Image:
     message_font = load_font(38)
     footer_font = load_font(24)
 
-    title_text = "AI Boishakh Mood Detector"
+    title_text = "Welsome to Boishakh Festival"
     footer_text = f"Detected mood: {emotion.capitalize()} {EMOTION_EMOJIS.get(emotion, '')}".strip()
 
     title_box = draw.textbbox((0, 0), title_text, font=title_font)
     title_width = title_box[2] - title_box[0]
     draw.text(((width - title_width) / 2, 40), title_text, fill="#7D1F1F", font=title_font)
 
-    max_text_width = width - 240
-    wrapped_lines: list[str] = []
-    current_line = ""
-    for word in message.split():
-        trial_line = f"{current_line} {word}".strip()
-        trial_box = draw.textbbox((0, 0), trial_line, font=message_font)
-        if trial_box[2] - trial_box[0] <= max_text_width:
-            current_line = trial_line
-        else:
-            if current_line:
-                wrapped_lines.append(current_line)
-            current_line = word
-    if current_line:
-        wrapped_lines.append(current_line)
+    if user_image is not None:
+        try:
+            user_photo = Image.fromarray(user_image).convert("RGB").resize((180, 180), Image.Resampling.LANCZOS)
+            framed_photo = Image.new("RGBA", (196, 196), (255, 255, 255, 255))
+            framed_photo.paste(user_photo, (8, 8))
+            rotated_photo = framed_photo.rotate(-10, expand=True, resample=Image.Resampling.BICUBIC)
+            paste_x = width - rotated_photo.width - 70
+            paste_y = 110
+            image.paste(rotated_photo, (paste_x, paste_y), rotated_photo)
+            photo_layout = {
+                "left": paste_x,
+                "top": paste_y,
+                "right": paste_x + rotated_photo.width,
+                "bottom": paste_y + rotated_photo.height,
+            }
+        except Exception:
+            pass
 
-    text_block = "\n".join(wrapped_lines)
-    text_box = draw.multiline_textbbox((0, 0), text_block, font=message_font, spacing=16, align="center")
+    text_left = 120
+    text_top = 150
+    text_bottom = height - 125
+    text_align = "center"
+    safe_right = width - 120
+
+    if photo_layout is not None:
+        safe_right = min(safe_right, photo_layout["left"] - 40)
+        text_align = "left"
+
+    available_width = max(220, safe_right - text_left)
+    available_height = text_bottom - text_top
+    font_size = 38
+    line_spacing = 16
+    wrapped_lines: list[str] = []
+    text_block = message
+    text_box = (0, 0, 0, 0)
+
+    while font_size >= 26:
+        current_font = load_font(font_size)
+        trial_lines: list[str] = []
+        current_line = ""
+        for word in message.split():
+            trial_line = f"{current_line} {word}".strip()
+            trial_box = draw.textbbox((0, 0), trial_line, font=current_font)
+            if trial_box[2] - trial_box[0] <= available_width:
+                current_line = trial_line
+            else:
+                if current_line:
+                    trial_lines.append(current_line)
+                current_line = word
+        if current_line:
+            trial_lines.append(current_line)
+
+        trial_block = "\n".join(trial_lines)
+        trial_block = fix_bengali_text(trial_block)
+        trial_box = draw.multiline_textbbox((0, 0), trial_block, font=current_font, spacing=line_spacing, align=text_align)
+        trial_height = trial_box[3] - trial_box[1]
+        if trial_height <= available_height:
+            message_font = current_font
+            wrapped_lines = trial_lines
+            text_block = trial_block
+            text_box = trial_box
+            break
+        font_size -= 2
+        line_spacing = max(10, line_spacing - 1)
+    else:
+        message_font = load_font(26)
+        wrapped_lines = [message]
+        text_block = fix_bengali_text(message)
+        text_box = draw.multiline_textbbox((0, 0), text_block, font=message_font, spacing=10, align=text_align)
+        line_spacing = 10
+
     text_width = text_box[2] - text_box[0]
     text_height = text_box[3] - text_box[1]
-    text_x = (width - text_width) / 2
-    text_y = (height - text_height) / 2
-    draw.multiline_text((text_x, text_y), text_block, fill="#8B1E1E", font=message_font, spacing=16, align="center")
+    if photo_layout is not None:
+        text_x = text_left
+        text_y = text_top + max(0, (available_height - text_height) / 2)
+    else:
+        text_x = (width - text_width) / 2
+        text_y = (height - text_height) / 2
+    draw.multiline_text((text_x, text_y), text_block, fill="#8B1E1E", font=message_font, spacing=line_spacing, align=text_align)
 
     footer_box = draw.textbbox((0, 0), footer_text, font=footer_font)
     footer_width = footer_box[2] - footer_box[0]
     draw.text(((width - footer_width) / 2, height - 72), footer_text, fill="#7D1F1F", font=footer_font)
+
+    try:
+        qr = generate_qr_code("https://www.facebook.com/genesisgub", size=120)
+        qr_x = 110
+        qr_y = height - 160
+        image.paste(qr, (qr_x, qr_y))
+        qr_label = "Scan to visit Genesis"
+        qr_label_box = draw.textbbox((0, 0), qr_label, font=footer_font)
+        qr_label_width = qr_label_box[2] - qr_label_box[0]
+        qr_label_x = qr_x + ((120 - qr_label_width) / 2)
+        qr_label_y = qr_y + 126
+        draw.text((qr_label_x, qr_label_y), qr_label, fill="#7D1F1F", font=footer_font)
+    except Exception:
+        pass
 
     return image
 
@@ -403,6 +507,25 @@ def image_to_png_bytes(image: Image.Image) -> bytes:
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
     return buffer.getvalue()
+
+
+def save_card(image: Image.Image) -> str:
+    OUTPUTS_DIR.mkdir(exist_ok=True)
+    CARDS_DIR.mkdir(exist_ok=True)
+    filename = f"card_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+    file_path = CARDS_DIR / filename
+    image.save(file_path, format="PNG")
+    return str(file_path)
+
+
+def log_entry(name: str, emotion: str, fast_mode: bool, file_path: str) -> None:
+    OUTPUTS_DIR.mkdir(exist_ok=True)
+    file_exists = LOG_FILE.exists()
+    with LOG_FILE.open("a", newline="", encoding="utf-8") as csv_file:
+        writer = csv.writer(csv_file)
+        if not file_exists:
+            writer.writerow(["timestamp", "name", "emotion", "fast_mode", "file_path"])
+        writer.writerow([datetime.now().isoformat(timespec="seconds"), name, emotion, fast_mode, file_path])
 
 
 def save_temp_png(image: Image.Image) -> str:
@@ -439,7 +562,7 @@ def festival_mood_score(history: list[str]) -> float:
     return sum(FESTIVAL_MOOD_SCORES.get(emotion, 0.5) for emotion in history) / len(history)
 
 
-def maybe_process_capture(image: np.ndarray, name: str, fast_mode: bool) -> None:
+def maybe_process_capture(image: np.ndarray, name: str, fast_mode: bool, user_greeting: str = "") -> None:
     current_signature = st.session_state.get("current_capture_signature")
     last_signature = st.session_state.get("last_processed_signature")
 
@@ -448,8 +571,15 @@ def maybe_process_capture(image: np.ndarray, name: str, fast_mode: bool) -> None
 
     with st.spinner("Analyzing mood from the captured photo..."):
         emotion, status_message = detect_emotion(image, fast_mode=fast_mode)
-        message = get_message(emotion, name=name)
-        card = create_card(message, emotion)
+        cleaned_user_greeting = user_greeting.strip()
+        temp_message_map = MESSAGE_MAP.copy()
+        if cleaned_user_greeting and cleaned_user_greeting not in MESSAGE_MAP.get(emotion, MESSAGE_MAP["neutral"]):
+            temp_message_map[emotion] = MESSAGE_MAP.get(emotion, MESSAGE_MAP["neutral"]) + [cleaned_user_greeting]
+        session_user_greeting = cleaned_user_greeting if cleaned_user_greeting in temp_message_map.get(emotion, []) else ""
+        message = get_message(emotion, name=name, user_greeting=session_user_greeting)
+        card = create_card(message, emotion, user_image=image)
+        saved_file_path = save_card(card)
+        log_entry(name.strip(), emotion, fast_mode, saved_file_path)
         card_bytes = image_to_png_bytes(card)
 
     st.session_state.emotion_history.append(emotion)
@@ -460,6 +590,7 @@ def maybe_process_capture(image: np.ndarray, name: str, fast_mode: bool) -> None
         "message": message,
         "card": card,
         "card_bytes": card_bytes,
+        "saved_file_path": saved_file_path,
         "status_message": status_message,
         "name": name.strip(),
         "fast_mode": fast_mode,
@@ -476,11 +607,11 @@ def render_percentage_breakdown(history: list[str]) -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="AI Boishakh Mood Detector", page_icon="🌺", layout="centered")
+    st.set_page_config(page_title="Crit by GENESIS", page_icon="🌺", layout="centered")
     apply_theme()
 
     render_logos()
-    st.title("AI Boishakh Mood Detector")
+    st.title("Welcome to GENESIS booth!")
     st.caption("Fully local Boishakh greeting demo with emotion detection, download, printing, and mood analytics.")
 
     if "emotion_history" not in st.session_state:
@@ -495,12 +626,13 @@ def main() -> None:
         st.session_state.model_ready = False
 
     st.markdown('<div class="boishakh-panel">', unsafe_allow_html=True)
-    st.subheader("Capture & Analyze")
+    st.subheader("Capture & Generate Greeting Card")
     capture_col, form_col = st.columns([1.3, 0.9], vertical_alignment="top")
     with capture_col:
         captured_image = capture_image()
     with form_col:
         name = st.text_input("Enter your name (optional)")
+        user_greeting = st.text_input("Write your own Boishakh greeting (optional)")
         fast_mode = st.checkbox("⚡ Fast Mode", help="Uses a lightweight fallback estimate for faster live demos.")
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -512,7 +644,7 @@ def main() -> None:
             st.warning(model_message)
 
     if captured_image is not None:
-        maybe_process_capture(captured_image, name=name, fast_mode=fast_mode)
+        maybe_process_capture(captured_image, name=name, fast_mode=fast_mode, user_greeting=user_greeting)
     else:
         st.info("Take a camera photo to start the emotion detection demo.")
 
