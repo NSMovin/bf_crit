@@ -1,33 +1,80 @@
-# Pohela Boishakh Mood Visual Detection
+# AI Boishakh Mood Detector
 
-This project is a working prototype built for a Pohela Boishakh festival stall showcase by the GENESIS Club of the Department of Artificial Intelligence and Data Science at Green University.
+`AI Boishakh Mood Detector` is a local Streamlit demo app for Pohela Boishakh that captures a visitor photo, detects emotion, generates a personalized Bengali greeting, and creates a themed greeting card for download or printing.
 
-The idea behind the project is to detect the mood of stall visitors during the festival, understand how much they are enjoying the event, and respond in a fun and interactive way. Based on the detected mood, the system can present a greeting card tailored to the visitor's emotional state. At the same time, the project is designed to keep track of visitor mood data for later review and analysis.
+The app is designed for live demos on low-end laptops and runs fully offline with a `uv`-managed Python environment.
 
-## Project Goal
+## Features
 
-The main goal of this prototype is to combine computer vision and mood detection in a festive setting to create an engaging visitor experience. It is meant to demonstrate how AI can be used in event spaces not only for interaction, but also for collecting useful behavioral insights.
+- Streamlit camera capture with `st.camera_input()`
+- Emotion detection with DeepFace using a safe fallback path
+- Optional user name personalization in the greeting
+- Boishakh-themed greeting card generation with Pillow
+- PNG download support for the generated card
+- Windows print support with graceful fallback
+- Fast Mode for quicker demo performance
+- Session-based emotion tracking and analytics
+- Festival mood distribution bar chart and mood score
+- Local assets for top banner logos in `images/`
 
-## Current Prototype
+## Tech Stack
 
-At its current stage, the project focuses on:
+- Python
+- Streamlit
+- DeepFace
+- TensorFlow / `tf-keras`
+- Pillow
+- NumPy
 
-- Detecting visitor mood from visual input
-- Providing a mood-based greeting card or response
-- Creating a simple foundation for collecting visitor mood records
-- Demonstrating an interactive AI-powered stall experience for Pohela Boishakh
+## Project Structure
 
-This version is intended as an initial showcase prototype, so it may still contain limitations in accuracy, usability, and data handling.
+```text
+bf_crit_v1.0/
+├── app.py
+├── images/
+├── pyproject.toml
+├── uv.lock
+└── README.md
+```
 
-## Future Plans
+## Run The App
 
-In future iterations, the project will be improved and expanded. Planned updates include:
+From the `bf_crit_v1.0` directory:
 
-- Fixing current issues in mood detection and overall system stability
-- Improving detection accuracy across different lighting, angles, and crowd conditions
-- Enhancing the greeting card generation experience
-- Storing and organizing visitor mood data more effectively for later analysis
-- Adding cleaner analytics and reporting features
-- Refining the user experience for use in a real festival stall environment
+```bash
+uv run streamlit run app.py
+```
 
-The long-term vision is to turn this prototype into a more reliable and polished interactive festival system that can both entertain visitors and provide meaningful insights from collected mood data.
+## Dependency Management
+
+This project uses `uv`. Do not use `pip` or create a separate virtual environment manually.
+
+If dependencies need to be refreshed:
+
+```bash
+uv sync
+```
+
+## How It Works
+
+1. Capture a photo using the built-in Streamlit camera input.
+2. The app analyzes the image locally to estimate the dominant emotion.
+3. A Bengali Pohela Boishakh greeting is selected based on the mood.
+4. A themed greeting card is generated and shown in the app.
+5. The card can be downloaded as PNG or printed on Windows.
+6. Emotion history is stored in `st.session_state` for live analytics.
+
+## Demo Notes
+
+- The first DeepFace model load may take extra time.
+- `Fast Mode` gives a quicker fallback estimate for smoother live demos.
+- If face detection is unclear or DeepFace fails, the app falls back safely instead of crashing.
+- Printing is best-effort and currently Windows-first.
+
+## Images
+
+The `images/` folder contains the banner logos used at the top of the app UI.
+
+## Goal
+
+The project is intended as an interactive Pohela Boishakh festival demo that combines AI-based mood detection, personalized greetings, and simple analytics in a compact local application.
