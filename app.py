@@ -75,11 +75,20 @@ EMOTION_NORMALIZATION = {
 
 
 def apply_theme() -> None:
+    background_image_css = ""
+    background_path = Path("images") / "background" / "background.png"
+    if background_path.exists():
+        encoded_background = base64.b64encode(background_path.read_bytes()).decode("ascii")
+        background_image_css = f', url("data:image/png;base64,{encoded_background}")'
+
     st.markdown(
         """
         <style>
         .stApp {
-            background: linear-gradient(180deg, #7d1414 0%, #991b1b 45%, #b91c1c 100%);
+            background: linear-gradient(180deg, rgba(125, 20, 20, 0.92) 0%, rgba(153, 27, 27, 0.90) 45%, rgba(185, 28, 28, 0.92) 100%)__BACKGROUND_IMAGE__;
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
             color: #ffffff;
         }
         .boishakh-panel {
@@ -171,7 +180,7 @@ def apply_theme() -> None:
             color: #ffffff;
         }
         </style>
-        """,
+        """.replace("__BACKGROUND_IMAGE__", background_image_css),
         unsafe_allow_html=True,
     )
 
@@ -712,6 +721,35 @@ def main() -> None:
         st.markdown("**Percentage Breakdown**")
         render_percentage_breakdown(history)
         st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    st.markdown('<div class="boishakh-panel">', unsafe_allow_html=True)
+    st.subheader("About Genesis")
+    st.write(
+        "Genesis is the Artificial Intelligence and Data Science club of Green University of Bangladesh. "
+        "We build innovative projects, explore modern technologies, and encourage hands-on learning."
+    )
+
+    st.subheader("About This Project")
+    st.write(
+        "This demo uses AI to detect facial emotion and generate personalized "
+        "Pohela Boishakh greeting cards in real-time using computer vision and data science."
+    )
+
+    st.subheader("Contributors")
+    st.write(
+        "- Naeem Shovon Shuvro\n"
+        "- Team Members (if any)\n"
+        "- Department of Artificial Intelligence & Data Science"
+    )
+
+    st.subheader("Connect With Us")
+    st.write(
+        "Scan the QR code on your card or visit our Facebook page to learn more about GENESIS."
+    )
+    st.image(generate_qr_code("https://www.facebook.com/genesisgub", size=140), width=140)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
