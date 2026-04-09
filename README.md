@@ -41,7 +41,6 @@ This version is working as a live demo application, but there are still a few kn
 - TensorFlow / `tf-keras`
 - Pillow
 - NumPy
-- `arabic-reshaper`
 - `python-bidi`
 - `qrcode`
 
